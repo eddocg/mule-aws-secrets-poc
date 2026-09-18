@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: mule-aws-secrets-poc
+  namespace: mule-poc
+  labels:
+    app.kubernetes.io/name: mule-aws-secrets-poc
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/component: mule-runtime
+    app.kubernetes.io/part-of: mule-secrets-poc
+spec:
+  # Internal only for Phase 1. No LoadBalancer, no Ingress, no public exposure; testing is
+  # done from inside the cluster via port-forward or an in-cluster client.
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: mule-aws-secrets-poc
+  ports:
+    - name: http
+      protocol: TCP
+      port: 8081
+      targetPort: http

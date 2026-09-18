@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Logging configuration for mule-aws-secrets-poc.
+
+    Default posture: INFO everywhere, no wire logging, no AWS SDK TRACE.
+
+    NEVER raise the AWS SDK or Secrets Manager loggers to DEBUG/TRACE in a shared or
+    long-lived environment: those levels can emit request/response bodies, which for
+    Secrets Manager means the SecretString (username + password) and for STS means
+    session credentials.
+
+    ===========================================================================
+    TROUBLESHOOTING SWITCHES (all intentionally left at INFO / commented out)
+    ===========================================================================
+    To debug database behaviour without touching application code, temporarily change
+    the level of the AsyncLogger entries at the bottom of this file:
+
+      org.mule.extension.db                      Database Connector operations, connection
+                                                 provider lifecycle, connect/disconnect.
+      com.mulesoft.mule.runtime.module.db         EE Database module internals.
+      org.mule.runtime.core.internal.connection    Connection management / retry / validation,
+                                                 useful to see when a physical JDBC connection
+                                                 is created or invalidated after rotation.
+      org.postgresql                             PostgreSQL JDBC driver. DEBUG logs SQL and
+                                                 protocol details. Safe for credentials, noisy.
+      com.amazonaws.secretsmanager.sql           AWS Secrets Manager JDBC wrapper driver
+                                                 (which secret is used, cache hit/miss, retry
+                                                 after auth failure). DO NOT exceed DEBUG.
+
+    Deliberately NOT enabled and NOT to be enabled by default:
+      software.amazon.awssdk                     AWS SDK v2 - DEBUG/TRACE can log HTTP wire
+                                                 content including SecretString and STS tokens.
+      software.amazon.awssdk.request / .requestId
+      org.apache.http.wire                       Raw HTTP wire logging.
+-->
+<Configuration status="WARN" name="mule-aws-secrets-poc">
+
+    <Appenders>
+        <RollingFile name="file"
+                     fileName="${sys:mule.home}${sys:file.separator}logs${sys:file.separator}mule-aws-secrets-poc.log"
+                     filePattern="${sys:mule.home}${sys:file.separator}logs${sys:file.separator}mule-aws-secrets-poc-%i.log">
+            <PatternLayout pattern="%-5p %d [%t] [processor: %X{processorPath}; event: %X{correlationId}] %c: %m%n"/>
+            <SizeBasedTriggeringPolicy size="10 MB"/>
+            <DefaultRolloverStrategy max="10"/>
+        </RollingFile>
+
+        <!-- Container friendly: EKS collects stdout. -->
+        <Console name="console" target="SYSTEM_OUT">
+            <PatternLayout pattern="%-5p %d [%t] [processor: %X{processorPath}; event: %X{correlationId}] %c: %m%n"/>
+        </Console>
+    </Appenders>
+
+    <Loggers>
+        <!-- Framework noise -->
+        <AsyncLogger name="org.mule.service.http.impl.service.HttpMessageLogger" level="WARN"/>
+        <AsyncLogger name="org.mule.service.http" level="WARN"/>
+        <AsyncLogger name="org.mule.extension.http" level="WARN"/>
+        <AsyncLogger name="org.apache.cxf" level="WARN"/>
+        <AsyncLogger name="org.apache" level="WARN"/>
+        <AsyncLogger name="org.apache.http.wire" level="WARN"/>
+        <AsyncLogger name="org.springframework.beans.factory" level="WARN"/>
+        <AsyncLogger name="org.mule" level="INFO"/>
+        <AsyncLogger name="com.mulesoft" level="INFO"/>
+
+        <!-- Application logger used by the flows in mule-aws-secrets-poc.xml -->
+        <AsyncLogger name="com.poc.mule.awssecrets" level="INFO"/>
+
+        <!-- ==== Database troubleshooting switches: raise to DEBUG only when needed ==== -->
+        <AsyncLogger name="org.mule.extension.db" level="INFO"/>
+        <AsyncLogger name="com.mulesoft.mule.runtime.module.db" level="INFO"/>
+        <AsyncLogger name="org.mule.runtime.core.internal.connection" level="INFO"/>
+        <AsyncLogger name="org.postgresql" level="INFO"/>
+        <AsyncLogger name="com.amazonaws.secretsmanager.sql" level="INFO"/>
+
+        <!-- ==== AWS SDK: keep at WARN. DEBUG/TRACE here can leak secret material. ==== -->
+        <AsyncLogger name="software.amazon.awssdk" level="WARN"/>
+        <AsyncLogger name="software.amazon.awssdk.request" level="WARN"/>
+        <AsyncLogger name="software.amazon.awssdk.auth" level="WARN"/>
+
+        <AsyncRoot level="INFO">
+            <AppenderRef ref="console"/>
+            <AppenderRef ref="file"/>
+        </AsyncRoot>
+    </Loggers>
+
+</Configuration>

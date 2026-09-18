@@ -1,0 +1,8 @@
+{
+  "minMuleVersion": "4.12.3",
+  "requiredProduct": "MULE_EE",
+  "configs": [
+    "mule-aws-secrets-poc.xml"
+  ],
+  "secureProperties": []
+}

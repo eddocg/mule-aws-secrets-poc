@@ -1,0 +1,43 @@
+# Build context exclusions for the mule-aws-secrets-poc image.
+#
+# IMPORTANT: .local/ is intentionally NOT excluded here. The Dockerfile consumes
+# .local/mule/mule-enterprise-standalone-4.12.3.zip from the build context, while .local/
+# stays ignored by Git. Do not add .local to this file.
+
+# VCS and docs
+.git
+.gitattributes
+.gitignore
+README.md
+
+# Never send license material to the Docker daemon
+*.lic
+**/*.lic
+muleLicenseKey.lic
+
+# Never send local credentials/config
+.env
+.env.*
+*.p12
+*.jks
+*.pem
+*.key
+
+# Build output: exclude everything except the deployable application JAR
+target/*
+!target/mule-aws-secrets-poc-1.0.0-mule-application.jar
+
+# Not needed inside the image. The shim is already packaged inside the application JAR's
+# repository/ folder, so its sources are not required in the build context.
+k8s/
+jdbc-cache-ttl/
+
+# OS / IDE noise
+.DS_Store
+**/.DS_Store
+.idea/
+*.iml
+.project
+.classpath
+.settings/
+.mule/

@@ -1,0 +1,161 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mule-aws-secrets-poc
+  namespace: mule-poc
+  labels:
+    app.kubernetes.io/name: mule-aws-secrets-poc
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/component: mule-runtime
+    app.kubernetes.io/part-of: mule-secrets-poc
+spec:
+  # Exactly one replica, intentionally. The credential-rotation experiment tracks a single
+  # stable pod's UID and restartCount to prove rotation works without a restart; more than
+  # one replica would make pg_backend_pid() observations ambiguous.
+  replicas: 1
+
+  # Recreate rather than RollingUpdate: a rolling update would briefly run a second pod,
+  # which would also muddy pod-identity and backend-PID observations.
+  strategy:
+    type: Recreate
+
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mule-aws-secrets-poc
+
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: mule-aws-secrets-poc
+        app.kubernetes.io/version: "1.0.0"
+        app.kubernetes.io/component: mule-runtime
+        app.kubernetes.io/part-of: mule-secrets-poc
+    spec:
+      # Pre-existing ServiceAccount with an EKS Pod Identity association. It is NOT created
+      # by this manifest. Pod Identity is the only source of AWS credentials for this pod.
+      serviceAccountName: mule-secrets-reader
+
+      # Mule needs time to shut down its runtime and deployed application cleanly.
+      terminationGracePeriodSeconds: 60
+
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        # Grants group ownership of the mounted license Secret to the Mule group so the
+        # non-root user can read it.
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+
+      containers:
+        - name: mule
+          # Replace IMAGE_REPOSITORY_PLACEHOLDER with the ECR registry/repository URI.
+          # An immutable version tag is used deliberately; :latest is not allowed.
+          image: IMAGE_REPOSITORY_PLACEHOLDER/mule-aws-secrets-poc:1.0.0
+          imagePullPolicy: IfNotPresent
+
+          ports:
+            - name: http
+              containerPort: 8081
+              protocol: TCP
+
+          env:
+            # --- Mule application configuration (non-secret) ---
+            - name: HTTP_PORT
+              value: "8081"
+            - name: DB_HOST
+              value: mule-poc-postgres.c1ym8w0m4wxm.us-east-2.rds.amazonaws.com
+            - name: DB_PORT
+              value: "5432"
+            - name: DB_NAME
+              value: poctest
+
+            # Secrets Manager secret ID. This is an identifier, not a credential; it is
+            # passed to the JDBC driver as the connection "user".
+            - name: AWS_SECRET_ID
+              value: mule-poc/database/app
+
+            # --- AWS region resolution ---
+            # AWS_SECRET_JDBC_REGION is read directly by the aws-secretsmanager-jdbc driver;
+            # AWS_REGION / AWS_DEFAULT_REGION are used by the AWS SDK itself.
+            - name: AWS_REGION
+              value: us-east-2
+            - name: AWS_DEFAULT_REGION
+              value: us-east-2
+            - name: AWS_SECRET_JDBC_REGION
+              value: us-east-2
+
+            # Secret cache TTL for the aws-secretsmanager-jdbc driver, in seconds. The AWS default
+            # is 3600 (1 hour); 60 shortens the window in which a rotated credential is still
+            # served from cache, so the rotation experiment observes pickup quickly.
+            # Read by the TtlConfiguredPostgreSQLDriver shim, not by Mule.
+            - name: AWS_SECRET_CACHE_TTL_SECONDS
+              value: "60"
+
+            # NOTE: AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY and AWS_SESSION_TOKEN are
+            # deliberately absent. EKS Pod Identity supplies credentials to the AWS SDK
+            # default credential provider chain at runtime. Do not add static credentials.
+
+          volumeMounts:
+            # Mule EE license, mounted read-only from a Secret and installed at startup by
+            # the entrypoint. The license is never baked into the image.
+            - name: mule-license
+              mountPath: /run/secrets/mule
+              readOnly: true
+
+          # Probes use GET /health, which deliberately does NOT touch the database.
+          # /db-test must never be used as a liveness probe: a database or Secrets Manager
+          # failure would restart the pod and destroy the very evidence (pod UID,
+          # restartCount, backend PID continuity) the rotation experiment depends on.
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 10
+            failureThreshold: 30
+
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 10
+            failureThreshold: 3
+
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 20
+            failureThreshold: 3
+
+          # PoC sizing only. NOT a production or RTF sizing recommendation, and JVM heap is
+          # deliberately left untuned at this stage. See README.
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              cpu: "1"
+              memory: 2Gi
+
+          securityContext:
+            allowPrivilegeEscalation: false
+            # Deliberately NOT read-only: Mule standalone writes runtime files under
+            # MULE_HOME (conf, apps, logs, domains, tmp). Revisit in a later phase.
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop:
+                - ALL
+
+      volumes:
+        # Pre-existing Secret, created manually. No manifest in this repository contains the
+        # license file or its contents. See README for the kubectl create secret command.
+        - name: mule-license
+          secret:
+            secretName: mule-runtime-license
+            optional: false
+            defaultMode: 0440
+            items:
+              - key: license.lic
+                path: license.lic

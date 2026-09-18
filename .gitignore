@@ -1,0 +1,31 @@
+# Mule Enterprise license files - never commit
+*.lic
+muleLicenseKey.lic
+license2027.lic
+
+# Locally supplied, non-redistributable artifacts - never commit.
+# Holds mule/mule-enterprise-standalone-4.12.3.zip, which the Docker build consumes from the
+# build context. Ignored by Git but deliberately NOT excluded in .dockerignore.
+.local/
+
+# Local environment / credentials - never commit
+.env
+.env.*
+*.p12
+*.jks
+*.pem
+*.key
+
+# Build output
+target/
+
+# OS
+.DS_Store
+
+# IDE
+.idea/
+*.iml
+.project
+.classpath
+.settings/
+.mule/
