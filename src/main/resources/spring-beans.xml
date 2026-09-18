@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="
+         http://www.springframework.org/schema/beans
+         http://www.springframework.org/schema/beans/spring-beans.xsd">
+
+    <!--
+        HikariCP connection pool for the PoC.
+
+        Hikari is the ONLY connection pool in this application. The Mule Database Connector
+        references this bean through dataSourceRef and has no pooling profile of its own.
+
+        Connection path:
+            HikariDataSource
+              -> com.poc.mule.awssecrets.jdbc.TtlConfiguredPostgreSQLDriver   (secret cache TTL)
+              -> com.amazonaws.secretsmanager.sql.AWSSecretsManagerPostgreSQLDriver
+              -> AWS Secrets Manager (credentials, via EKS Pod Identity)
+              -> org.postgresql.Driver -> RDS PostgreSQL
+
+        Credentials:
+        * "username" carries the AWS Secrets Manager SECRET ID, not a database user. The AWS JDBC
+          wrapper resolves the real username/password from that secret on every physical connection.
+        * There is deliberately NO password property. No database password exists in this file, in
+          Mule properties, or anywhere else in the repository.
+
+        Configuration values are read from environment variables via SpEL against Spring's built-in
+        "systemEnvironment" map, each with the PoC default inline. Changing pool behaviour therefore
+        only requires editing the Kubernetes Deployment and restarting the pod - no source change,
+        no Maven rebuild, no Docker rebuild, no image push.
+    -->
+    <bean id="hikariDataSource"
+          class="com.zaxxer.hikari.HikariDataSource"
+          destroy-method="close">
+
+        <property name="poolName" value="mule-secrets-hikari"/>
+
+        <property name="driverClassName"
+                  value="com.poc.mule.awssecrets.jdbc.TtlConfiguredPostgreSQLDriver"/>
+
+        <property name="jdbcUrl"
+                  value="#{'jdbc-secretsmanager:postgresql://' + systemEnvironment['DB_HOST'] + ':' + systemEnvironment['DB_PORT'] + '/' + systemEnvironment['DB_NAME']}"/>
+
+        <!-- AWS Secrets Manager secret ID (an identifier, not a credential). -->
+        <property name="username" value="#{systemEnvironment['AWS_SECRET_ID']}"/>
+
+        <!-- Pool sizing. minimumIdle == maximumPoolSize keeps the pool at a fixed size. -->
+        <property name="maximumPoolSize"
+                  value="#{T(java.lang.Integer).parseInt(systemEnvironment['HIKARI_MAX_POOL_SIZE'] ?: '1')}"/>
+        <property name="minimumIdle"
+                  value="#{T(java.lang.Integer).parseInt(systemEnvironment['HIKARI_MIN_IDLE'] ?: '1')}"/>
+
+        <!--
+            maxLifetime is the lifecycle mechanism this PoC observes: it is what retires a physical
+            connection that authenticated with a pre-rotation credential, forcing Hikari to open a
+            new one through the AWS wrapper using the current secret.
+
+            idleTimeout is deliberately NOT configured: with minimumIdle == maximumPoolSize it would
+            have no effect, and leaving it unset keeps maxLifetime as the single observable trigger.
+        -->
+        <property name="maxLifetime"
+                  value="#{T(java.lang.Long).parseLong(systemEnvironment['HIKARI_MAX_LIFETIME_MS'] ?: '30000')}"/>
+        <property name="connectionTimeout"
+                  value="#{T(java.lang.Long).parseLong(systemEnvironment['HIKARI_CONNECTION_TIMEOUT_MS'] ?: '10000')}"/>
+        <property name="validationTimeout"
+                  value="#{T(java.lang.Long).parseLong(systemEnvironment['HIKARI_VALIDATION_TIMEOUT_MS'] ?: '5000')}"/>
+    </bean>
+
+</beans>

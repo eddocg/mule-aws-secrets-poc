@@ -87,11 +87,31 @@ spec:
               value: us-east-2
 
             # Secret cache TTL for the aws-secretsmanager-jdbc driver, in seconds. The AWS default
-            # is 3600 (1 hour); 60 shortens the window in which a rotated credential is still
+            # is 3600 (1 hour); 10 shortens the window in which a rotated credential is still
             # served from cache, so the rotation experiment observes pickup quickly.
             # Read by the TtlConfiguredPostgreSQLDriver shim, not by Mule.
             - name: AWS_SECRET_CACHE_TTL_SECONDS
-              value: "60"
+              value: "10"
+
+            # --- HikariCP pool tuning (consumed by the Spring bean in spring-beans.xml) ---
+            # These can be retuned by editing this Deployment and restarting the pod: no source
+            # change, no Maven rebuild, no Docker rebuild and no new image push are required.
+            #
+            # maximumPoolSize=1 keeps exactly one physical connection so pg_backend_pid() is an
+            # unambiguous identifier during the rotation experiment. maxLifetime is the mechanism
+            # that retires the pre-rotation connection and forces a new authentication.
+            # idleTimeout is intentionally not set: with minimumIdle == maximumPoolSize it would
+            # have no effect and would obscure maxLifetime as the single observable trigger.
+            - name: HIKARI_MAX_POOL_SIZE
+              value: "1"
+            - name: HIKARI_MIN_IDLE
+              value: "1"
+            - name: HIKARI_MAX_LIFETIME_MS
+              value: "30000"
+            - name: HIKARI_CONNECTION_TIMEOUT_MS
+              value: "10000"
+            - name: HIKARI_VALIDATION_TIMEOUT_MS
+              value: "5000"
 
             # NOTE: AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY and AWS_SESSION_TOKEN are
             # deliberately absent. EKS Pod Identity supplies credentials to the AWS SDK

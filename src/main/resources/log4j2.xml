@@ -72,6 +72,14 @@
         <AsyncLogger name="org.postgresql" level="INFO"/>
         <AsyncLogger name="com.amazonaws.secretsmanager.sql" level="INFO"/>
 
+        <!-- ==== HikariCP pool lifecycle evidence for the rotation PoC ====
+             Temporarily at DEBUG, scoped to com.zaxxer.hikari only (NOT global DEBUG).
+             At this level Hikari reports pool startup, physical connection creation, connection
+             reuse/borrow-return, retirement due to maxLifetime, and replacement connections.
+             Hikari logs pool and connection identifiers only, never credentials.
+             Set back to INFO once the lifecycle evidence has been collected. -->
+        <AsyncLogger name="com.zaxxer.hikari" level="DEBUG"/>
+
         <!-- ==== AWS SDK: keep at WARN. DEBUG/TRACE here can leak secret material. ==== -->
         <AsyncLogger name="software.amazon.awssdk" level="WARN"/>
         <AsyncLogger name="software.amazon.awssdk.request" level="WARN"/>

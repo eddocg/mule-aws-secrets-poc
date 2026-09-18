@@ -29,6 +29,9 @@
 
         <mule.http.connector.version>1.12.1</mule.http.connector.version>
         <mule.db.connector.version>1.16.4</mule.db.connector.version>
+        <mule.spring.module.version>1.3.9</mule.spring.module.version>
+
+        <hikaricp.version>5.1.0</hikaricp.version>
 
         <aws.secretsmanager.jdbc.version>2.1.3</aws.secretsmanager.jdbc.version>
         <postgresql.version>42.7.13</postgresql.version>
@@ -77,25 +80,48 @@
             <classifier>mule-plugin</classifier>
         </dependency>
 
+        <!-- Spring module, so the HikariDataSource bean can be defined and referenced by dataSourceRef. -->
+        <dependency>
+            <groupId>org.mule.modules</groupId>
+            <artifactId>mule-spring-module</artifactId>
+            <version>${mule.spring.module.version}</version>
+            <classifier>mule-plugin</classifier>
+        </dependency>
+
         <!--
-            JDBC / AWS libraries. These are declared as provided so they are not exported by the
-            application classloader; the Database Connector receives them through the
-            additionalPluginDependencies block below, which is the documented Mule 4 driver
-            visibility model.
+            JDBC / AWS / pooling libraries.
+
+            These are now compile scope (previously provided + additionalPluginDependencies).
+            The JDBC driver is no longer instantiated by the Database Connector; Spring/Hikari
+            instantiates it in the application classloader, so the stack must live there. They are
+            additionally declared as <sharedLibraries> below so the Database Connector can see the
+            same classes, which keeps exactly ONE copy of the JDBC stack in the application
+            classloader instead of duplicating it into the connector classloader.
         -->
+        <dependency>
+            <groupId>com.zaxxer</groupId>
+            <artifactId>HikariCP</artifactId>
+            <version>${hikaricp.version}</version>
+        </dependency>
+
+        <!-- Configures the AWS secret cache TTL; see jdbc-cache-ttl/. -->
+        <dependency>
+            <groupId>com.poc.mule</groupId>
+            <artifactId>mule-aws-secrets-poc-jdbc-cache-ttl</artifactId>
+            <version>${jdbc.cache.ttl.version}</version>
+        </dependency>
+
         <dependency>
             <groupId>com.amazonaws.secretsmanager</groupId>
             <artifactId>aws-secretsmanager-jdbc</artifactId>
             <version>${aws.secretsmanager.jdbc.version}</version>
-            <scope>provided</scope>
         </dependency>
 
         <!--
             The two AWS SDK v2 modules below are already transitive dependencies of
             aws-secretsmanager-jdbc:2.1.3 at the same version we target. They are declared
             explicitly (version managed by the BOM above) so the alignment is visible and so a
-            future STS bump cannot silently reintroduce a mixed AWS SDK v2 version set across
-            the connector classloader.
+            future STS bump cannot silently reintroduce a mixed AWS SDK v2 version set.
 
             aws-crt-client is NOT optional: JDBCSecretCacheBuilderProvider hard-wires the
             Secrets Manager client to
@@ -111,27 +137,23 @@
         <dependency>
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>secretsmanager</artifactId>
-            <scope>provided</scope>
         </dependency>
 
         <dependency>
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>aws-crt-client</artifactId>
-            <scope>provided</scope>
         </dependency>
 
         <dependency>
             <groupId>org.postgresql</groupId>
             <artifactId>postgresql</artifactId>
             <version>${postgresql.version}</version>
-            <scope>provided</scope>
         </dependency>
 
         <!-- Required later on EKS: the default credential provider chain resolves EKS Pod Identity via STS. -->
         <dependency>
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>sts</artifactId>
-            <scope>provided</scope>
         </dependency>
     </dependencies>
 
@@ -144,72 +166,34 @@
                 <extensions>true</extensions>
                 <configuration>
                     <classifier>mule-application</classifier>
-                    <additionalPluginDependencies>
-                        <!--
-                            Database Connector classloader isolation: the connector cannot see the
-                            application's dependencies, so the JDBC driver and the AWS libraries it
-                            needs are injected directly into the mule-db-connector plugin classloader.
-                        -->
-                        <plugin>
-                            <groupId>org.mule.connectors</groupId>
-                            <artifactId>mule-db-connector</artifactId>
-                            <additionalDependencies>
-                                <!--
-                                    NOTE: additionalPluginDependencies are resolved by the
-                                    mule-maven-plugin and do NOT inherit this project's
-                                    dependencyManagement / imported AWS SDK BOM, and <exclusions>
-                                    declared here are ignored by the plugin. Every AWS SDK module we
-                                    care about is therefore re-declared with an explicit version so
-                                    nearest-wins resolution pins the whole connector classloader to
-                                    one AWS SDK v2 version.
+                    <!--
+                        Shared libraries: exported from the application classloader so the
+                        Database Connector sees the SAME classes the Spring/Hikari DataSource uses.
 
-                                    sts must stay in this list: it is what lets the AWS Default
-                                    Credential Provider Chain resolve EKS Pod Identity credentials
-                                    from inside the Database Connector classloader.
-                                -->
-                                <!--
-                                    Makes the AWS secret cache TTL configurable via
-                                    AWS_SECRET_CACHE_TTL_SECONDS. It must live HERE, in the
-                                    connector classloader, because the Database Connector resolves
-                                    driverClassName with Class.forName inside its own classloader
-                                    and cannot see Mule application classes.
-
-                                    Built from the sibling jdbc-cache-ttl/ project, which must be
-                                    installed first:  cd jdbc-cache-ttl && mvn clean install
-                                -->
-                                <dependency>
-                                    <groupId>com.poc.mule</groupId>
-                                    <artifactId>mule-aws-secrets-poc-jdbc-cache-ttl</artifactId>
-                                    <version>${jdbc.cache.ttl.version}</version>
-                                </dependency>
-                                <dependency>
-                                    <groupId>com.amazonaws.secretsmanager</groupId>
-                                    <artifactId>aws-secretsmanager-jdbc</artifactId>
-                                    <version>${aws.secretsmanager.jdbc.version}</version>
-                                </dependency>
-                                <dependency>
-                                    <groupId>software.amazon.awssdk</groupId>
-                                    <artifactId>secretsmanager</artifactId>
-                                    <version>${aws.java.sdk.version}</version>
-                                </dependency>
-                                <dependency>
-                                    <groupId>software.amazon.awssdk</groupId>
-                                    <artifactId>aws-crt-client</artifactId>
-                                    <version>${aws.java.sdk.version}</version>
-                                </dependency>
-                                <dependency>
-                                    <groupId>org.postgresql</groupId>
-                                    <artifactId>postgresql</artifactId>
-                                    <version>${postgresql.version}</version>
-                                </dependency>
-                                <dependency>
-                                    <groupId>software.amazon.awssdk</groupId>
-                                    <artifactId>sts</artifactId>
-                                    <version>${aws.java.sdk.version}</version>
-                                </dependency>
-                            </additionalDependencies>
-                        </plugin>
-                    </additionalPluginDependencies>
+                        Replaces the previous additionalPluginDependencies wiring. The Database
+                        Connector no longer instantiates the JDBC driver (it receives a DataSource
+                        through dataSourceRef), so duplicating the JDBC stack into the connector
+                        classloader is no longer needed or desirable. Their transitive AWS SDK
+                        dependencies come along as ordinary application dependencies.
+                    -->
+                    <sharedLibraries>
+                        <sharedLibrary>
+                            <groupId>com.zaxxer</groupId>
+                            <artifactId>HikariCP</artifactId>
+                        </sharedLibrary>
+                        <sharedLibrary>
+                            <groupId>com.poc.mule</groupId>
+                            <artifactId>mule-aws-secrets-poc-jdbc-cache-ttl</artifactId>
+                        </sharedLibrary>
+                        <sharedLibrary>
+                            <groupId>com.amazonaws.secretsmanager</groupId>
+                            <artifactId>aws-secretsmanager-jdbc</artifactId>
+                        </sharedLibrary>
+                        <sharedLibrary>
+                            <groupId>org.postgresql</groupId>
+                            <artifactId>postgresql</artifactId>
+                        </sharedLibrary>
+                    </sharedLibraries>
                 </configuration>
             </plugin>
         </plugins>
