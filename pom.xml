@@ -31,6 +31,11 @@
         <mule.db.connector.version>1.16.4</mule.db.connector.version>
         <!-- 2.x is required for Java 17; 1.3.x only declares support for Java 1.8 and 11. -->
         <mule.spring.module.version>2.1.4</mule.spring.module.version>
+        <!-- 2.x is required for Java 17; 1.2.x only declares support for Java 1.8 and 11. -->
+        <mule.java.module.version>2.0.6</mule.java.module.version>
+
+        <spring.framework.version>6.2.19</spring.framework.version>
+        <spring.security.version>6.5.11</spring.security.version>
 
         <hikaricp.version>5.1.0</hikaricp.version>
 
@@ -87,6 +92,53 @@
             <artifactId>mule-spring-module</artifactId>
             <version>${mule.spring.module.version}</version>
             <classifier>mule-plugin</classifier>
+        </dependency>
+
+        <!-- Lets the /health and /db-test flows call the HikariPoolStatusProvider Spring bean. -->
+        <dependency>
+            <groupId>org.mule.module</groupId>
+            <artifactId>mule-java-module</artifactId>
+            <version>${mule.java.module.version}</version>
+            <classifier>mule-plugin</classifier>
+        </dependency>
+
+        <!--
+            The Spring Module plugin does not bundle Spring itself, so the application supplies
+            the Spring Framework and Spring Security libraries and exports them as
+            <sharedLibraries> below for the module to see.
+
+            Spring Security is not used by this application: the module references
+            org.springframework.security.authentication.AuthenticationProvider while
+            initialising, which fails with NoClassDefFoundError if the library is absent.
+        -->
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-core</artifactId>
+            <version>${spring.framework.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-beans</artifactId>
+            <version>${spring.framework.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-context</artifactId>
+            <version>${spring.framework.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-core</artifactId>
+            <version>${spring.security.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-config</artifactId>
+            <version>${spring.security.version}</version>
         </dependency>
 
         <!--
@@ -178,6 +230,26 @@
                         dependencies come along as ordinary application dependencies.
                     -->
                     <sharedLibraries>
+                        <sharedLibrary>
+                            <groupId>org.springframework</groupId>
+                            <artifactId>spring-core</artifactId>
+                        </sharedLibrary>
+                        <sharedLibrary>
+                            <groupId>org.springframework</groupId>
+                            <artifactId>spring-beans</artifactId>
+                        </sharedLibrary>
+                        <sharedLibrary>
+                            <groupId>org.springframework</groupId>
+                            <artifactId>spring-context</artifactId>
+                        </sharedLibrary>
+                        <sharedLibrary>
+                            <groupId>org.springframework.security</groupId>
+                            <artifactId>spring-security-core</artifactId>
+                        </sharedLibrary>
+                        <sharedLibrary>
+                            <groupId>org.springframework.security</groupId>
+                            <artifactId>spring-security-config</artifactId>
+                        </sharedLibrary>
                         <sharedLibrary>
                             <groupId>com.zaxxer</groupId>
                             <artifactId>HikariCP</artifactId>

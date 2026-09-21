@@ -66,4 +66,13 @@
                   value="#{T(java.lang.Long).parseLong(systemEnvironment['HIKARI_VALIDATION_TIMEOUT_MS'] ?: '5000')}"/>
     </bean>
 
+    <!--
+        Read-only pool introspection for /health and /db-test. It wraps the data source above and
+        neither opens connections nor initialises the pool, so /health stays free of DB access.
+    -->
+    <bean id="hikariPoolStatusProvider"
+          class="com.poc.mule.awssecrets.health.HikariPoolStatusProvider">
+        <constructor-arg ref="hikariDataSource"/>
+    </bean>
+
 </beans>
